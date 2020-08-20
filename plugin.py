@@ -1197,7 +1197,7 @@ class BasePlugin:
         lVersions = Parameters["DomoticzVersion"].split(".")
         if (len(lVersions) == 2):
             iVersionMaj = int(lVersions[0])
-            iVersionMin = int(lVersions[1])
+            iVersionMin = int(lVersions[1].split(" ")[0])
             iVersion = (iVersionMaj * 1000000) + iVersionMin
             if iVersion >= 4011774:
                 self.iAlternateDevice = 0
