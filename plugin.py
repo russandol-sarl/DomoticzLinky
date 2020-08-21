@@ -118,7 +118,7 @@ from time import strptime
 from pprint import pprint
 
 
-CLIENT_ID = ["fae1d3c5-5bde-4c06-add7-bd4c7f41b116", "b2ad5376-341c-48a5-bf2c-a8341c0728d9"]
+CLIENT_ID = ["d198fd52-61c0-4b77-8725-06a1ef90da9f", "fae1d3c5-5bde-4c06-add7-bd4c7f41b116"]
 
 LOGIN_BASE_PORT = ["443", "443"]
 LOGIN_BASE_URI = ["enedis.domoticz.russandol.pro", "test.domoticz.russandol.pro"]
