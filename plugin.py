@@ -120,15 +120,15 @@ from time import strptime
 # import html
 import re
 
-CLIENT_ID = ["d198fd52-61c0-4b77-8725-06a1ef90da9f", "9c551777-9d1b-447c-9e68-bfe6896ee002"]
+CLIENT_ID = ["d198fd52-61c0-4b77-8725-06a1ef90da9f", "0f5d1d80-1999-42e8-9ffa-15707d079315"]
 
 LOGIN_BASE_PORT = ["443", "443"]
-LOGIN_BASE_URI = ["enedis.domoticz.russandol.pro", "opensrcdev.alwaysdata.net"]
-API_ENDPOINT_DEVICE_CODE = ["/device/code", "/domoticzlinkyconnect/device/code"]
-API_ENDPOINT_DEVICE_TOKEN = ["/device/token", "/domoticzlinkyconnect/device/token"]
-API_ENDPOINT_PROXY = ["/device/proxy", "/domoticzlinkyconnect/device/proxy"]
+LOGIN_BASE_URI = ["enedis.domoticz.russandol.pro", "test.domoticz.russandol.pro"]
+API_ENDPOINT_DEVICE_CODE = ["/device/code", "/device/code"]
+API_ENDPOINT_DEVICE_TOKEN = ["/device/token", "/device/token"]
+API_ENDPOINT_PROXY = ["/device/proxy", "/device/proxy"]
 VERIFY_CODE_URI = ["https://" + LOGIN_BASE_URI[0] + "/device?code=",
-                   "https://" + LOGIN_BASE_URI[1] + "/domoticzlinkyconnect/device?code="]
+                   "https://" + LOGIN_BASE_URI[1] + "/device?code="]
 
 API_BASE_PORT = ["443", "443"]
 API_BASE_URI = ["gw.prd.api.enedis.fr", "gw.hml.api.enedis.fr"]
