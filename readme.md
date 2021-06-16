@@ -23,7 +23,7 @@ En cliquant sur le bouton "Rapport" :
 ![Exemple de rapport](assets/reportfr.jpg)
 
 ## Prérequis
-La version de Domoticz doit être 4.11070 ou plus récente. La version de Domoticz doit être 4.11774, 2020.14 ou plus récente pour pouvoir visualiser l'énergie produite et la différentiation jour / nuit.
+La version de Domoticz doit être 4.11070 ou plus récente. La version de Domoticz doit être 4.11774, 2020.1 ou plus récente pour pouvoir visualiser l'énergie produite et la différentiation jour / nuit.
 
 Le framework python 3 doit être installé, suivez le guide https://www.domoticz.com/wiki/Using_Python_plugins, en particulier faites attention à installer la version "dev" si vous ne voyez pas apparaître le plugin dans la liste dans l'onglet de configuration Configuration / Matériel après avoir redémarré Domoticz.
 
@@ -72,6 +72,10 @@ Ajoutez le matériel Linky dans l'onglet de configuration Configuration / Matér
 Vous pouvez configurer les tarifs heures pleines (Coûts T1 pour la consommation et R1 pour la production) et heures creuses (Coûts T2 pour la consommation et R2 pour la production) dans le menu Configuration / Paramètres / Sondes/Compteurs. Dans ce menu, vérifiez que "Electricité" est bien mis à 1000.
 
 ![Configuration du coût horaire](assets/costsettingfr.jpg)
+
+Dans ce même menu, en bas, vérifiez que "P1 Smart Meter" est bien de type "Avec des décimales".
+
+![Réglage des décimales](assets/decimalsettingfr.jpg)
 
 ### Obtention du consentement
 Commencez par surveiller l'onglet "Erreur" dans Configuration / Log. Aux premières connexions, le plugin doit vous donner l'adresse Web https://enedis.domoticz.russandol.pro/device à consulter et un code à y copier/coller pour obtenir le consentement du partage de données d'Enedis vers le plugin.
@@ -137,9 +141,9 @@ Vous pouvez choisir le nombre à afficher sur le tableau de bord :
 
 ![Vue du dispositif sur le tableau de bord](assets/dashboardfr.jpg)
 
-* sur la première ligne : il s'agit d'un pic de consommation instantané (Watt)
+* sur la première ligne : il s'agit d'un pic de consommation instantané (Watt). Cette ligne correspond au paramètre "Consommation à montrer sur le tableau de bord (affichage principal)" du plugin
 
-* sur les lignes suivantes : il s'agit d'une énergie consommée (kWh). La valeur "Aujourd'hui" qui précède reste à 0, c'est normal car Enedis ne fournit que la valeur de la veille
+* sur les lignes suivantes : il s'agit d'une énergie consommée (kWh). La valeur "Aujourd'hui" qui précède reste à 0, c'est normal car Enedis ne fournit que la valeur de la veille. Ces lignes correspondent au paramètre "Consommation à montrer sur le tableau de bord (affichage secondaire)" du plugin. Ces lignes n'apparaîtront pas sur le tableau de bord principal (onglet Accueil), seulement dans l'onglet Mesures
 
 ### Nombre de jours à récupérer
 * Vous pouvez choisir le nombre de jours à récupérer pour la vue par heures. Vous pouvez mettre le nombre de jours à récupérer à 0 pour désactiver la récupération de données pour la vue par heures. Notez que Domoticz effacera chaque jour une partie des données de la vue par heures en se basant sur le paramètre Log des capteurs qui se trouve dans Configuration / Paramètres / Historique des logs, vous pouvez augmenter ce paramètre pour voir jusqu'à 7 jours d'historique
@@ -147,6 +151,22 @@ Vous pouvez choisir le nombre à afficher sur le tableau de bord :
 ![Log history setting](assets/loghistoryfr.jpg)
 
 * Vous pouvez choisir le nombre de jours à récupérer pour les autres vues. Si la valeur est supérieur à 35, le plugin ne fera la récupération que de temps en temps ou quand le paramètre est modifié, pour ne pas surcharger les serveurs d'Enedis. Une fois les données récupérées, elles sont stockées et persistent dans la base de données de Domoticz
+
+## Dépannage
+### Les courbes affichent les données en jour de la semaine, du mois et de l'année mais pas les données en heures
+Vérifiez que vous avez bien suivi toutes les étapes du menu [Configuration](#configuration).
+
+### Erreur "Données manquantes pour mettre à jour le tableau de bord"
+Cette erreur est liée à des données manquantes pour satisfaire les configurations d'affichage "Consommation à montrer sur le tableau de bord". Cette erreur doit être transitoire. Si elle persiste plusieurs jours de suite, essayez de changer la configuration "Consommation à montrer sur le tableau de bord". Si cela persiste encore, ouvrez une demande de support.
+
+### Erreur "Serveurs inaccessibles à cette heure"
+Les serveurs d'Enedis sont inaccessibles la nuit, le plugin va de lui-même ré-essayer de récupérer vos données le lendemain matin après 8h.
+
+### Erreur "Trop d'échecs de communication, le plugin réessaiera plus tard"
+Cela traduit en général un problème de quota : Enedis offre au plugin un certains nombre d'appels possibles vers son site pour l'ensemble des utilisateurs du plugin. Le plugin va de lui-même ré-essayer de récupérer vos données l'heure suivante. Si vous rencontrez souvent cette erreur, il vaut mieux diminuer le paramètre "Nombre de jours à récupérer pour les autres vues" à 7 pour diminuer le nombre d'appels.
+
+### Les problèmes persistent
+Passez le paramètre "Debug" à "Simple". Observez le log de Domoticz, il vous indiquera le chemin vers un fichier log spécifique au plugin, par exemple /tmp/DomoticzLinky_2021_01_17_15_04_19_ukzvik3k.log. Ouvrez ce fichier avec un éditeur de texte pour voir ce qui se trame. Si vous n'y comprenez rien, envoyez le fichier à l'adresse e-mail qui s'affiche sur https://github.com/guillaumezin (pour que l'adresse soit visible, il faut que vous ayez un compte github et que vous soyez connecté) et en parallèle ouvrez un ticket de support sur https://github.com/guillaumezin/DomoticzLinky/issues. N'essayez pas d'attachez le fichier log au ticket de support, ça ne passera pas.
 
 ## Auteurs
 * **Baptiste Candellier** - *Kindle Linky plugin* - [linkindle](https://github.com/outadoc/linkindle)
@@ -242,6 +262,10 @@ You can configure the peak hour tariffs (Costs T1 for consumption and R1 for pro
 
 ![Set hour tariffs](assets/costsettingen.jpg)
 
+In this same menu, at the bottom, check that "P1 Smart Meter" is indeed of type "With Decimals". 
+
+![Set decimals](assets/decimalsettingen.jpg)
+
 ### Give consent
 To start, go to "Error" tab in Setup / Log. At first connections, the plugin shall give you the web address https://enedis.domoticz.russandol.pro/device to browse and a code to copy/paste to give Enedis authorizations to share your data with the plugin.
 
@@ -306,9 +330,9 @@ You can choose the number you want to see on the dashboard:
 
 ![Device on dashboard](assets/dashboarden.jpg)
 
-* on first line: it is the instant consumption (Watt)
+* on first line: it is the instant consumption (Watt). This line is linked to "Consommation à montrer sur le tableau de bord (affichage principal)" plugin parameter
 
-* on next lines: it is the energy consumption (kWh). The "Today" value before is always 0, because Enedis provides the value for the day before only
+* on next lines: it is the energy consumption (kWh). The "Today" value before is always 0, because Enedis provides the value for the day before only. These lines are linked to "Consommation à montrer sur le tableau de bord (affichage secondaire)" plugin parameter. These lines won't appear on main dashboard view tab, only in Utility tab
 
 ### Data collect
 * You can choose the number of days to collect data for the short log (day). You can set the number of days to collect data for the short log (day) to 0 to disable data grabbing for this view. Note that Domoticz will clean every day data in the short log, based on the Short Log Sensors value the in Setup / Settings / Log History, you can increase the value there to get up to 7 days of short log history.
@@ -316,6 +340,22 @@ You can choose the number you want to see on the dashboard:
 ![Log history setting](assets/loghistoryen.jpg)
 
 * You can choose the number of days to collect data for week/month/year log. If the value is greater than 35, the plugin will grab data only from time to time or when the value is changed, so as not to overload the Enedis servers. After getting data, they are stored and persist in Domoticz database
+
+## Troubleshooting
+### The curves display the data in days of the week, the month and the year but not the data in hours
+Check that you have followed all the steps in the menu [Configuration](#configuration-1).
+
+### "Données manquantes pour mettre à jour le tableau de bord" error
+This error is related to missing data to satisfy the "Consommation à montrer sur le tableau de bord" display settings. This error must be transient. If it persists for several days in a row, try changing the "Consommation à montrer sur le tableau de bord" configuration. If this still persists, open a support request.
+
+### "Serveurs inaccessibles à cette heure" error
+The Enedis servers are inaccessible at night, the plugin will try to retrieve your data by itself the next morning after 8am.
+
+### "Trop d'échecs de communication, le plugin réessaiera plus tard" error
+This generally reflects a quota problem: Enedis gives the plugin a certain number of possible calls to its site for all users of the plugin. The plugin will on its own retry to retrieve your data the next hour. If you often encounter this error, it is better to decrease the "Nombre de jours à récupérer pour les autres vues" parameter to 7 to decrease the number of calls.
+
+### Problems persist
+Change the "Debug" parameter to "Simple". Observe the Domoticz log, it will show you the path to a plugin specific log file, for example /tmp/DomoticzLinky_2021_01_17_15_04_19_ukzvik3k.log. Open this file with a text editor to see what's going on. If you don't understand it, send the file to the email address that appears at https://github.com/guillaumezin (for the address to be visible, you must have a github account and you must be logged in) and at the same time open a support ticket on https://github.com/guillaumezin/DomoticzLinky/issues. Do not try to attach the log file to the support ticket, it will not work.
 
 ## Authors
 * **Baptiste Candellier** - *Kindle Linky plugin* - [linkindle](https://github.com/outadoc/linkindle)

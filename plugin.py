@@ -5,7 +5,7 @@
 #                       Modified (C) 2017 Asdepique777
 #                       Corrected (C) 2017 epierre
 #                       Modified (C) 2017 Asdepique777
-#                       Modified (C) 2018 Barberousse
+#                       Modified (C) 2018-2021 Barberousse
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -22,7 +22,7 @@
 # <http://www.gnu.org/licenses/>.
 #
 """
-<plugin key="linky" name="Linky" author="Barberousse" version="2.3.4" externallink="https://github.com/guillaumezin/DomoticzLinky">
+<plugin key="linky" name="Linky" author="Barberousse" version="2.3.9" externallink="https://github.com/guillaumezin/DomoticzLinky">
     <params>
         <param field="Mode4" label="Heures creuses (vide pour désactiver, cf. readme pour la syntaxe)" width="500px" required="false" default="">
 <!--        <param field="Mode4" label="Heures creuses" width="500px">
@@ -90,6 +90,7 @@
                 <option label="Simple" value="1"/>
                 <option label="Avancé" value="2"/>
                 <option label="Reset consentement" value="3"/>
+                <option label="Reset cache" value="4"/>
                 <option label="Faux client 0" value="10"/>
                 <option label="Faux client 1" value="11"/>
                 <option label="Faux client 2" value="12"/>
@@ -123,6 +124,9 @@ from time import strptime
 # import html
 import re
 import tempfile
+import pickle
+import codecs
+import hashlib
 
 CLIENT_ID = ["d198fd52-61c0-4b77-8725-06a1ef90da9f", "0f5d1d80-1999-42e8-9ffa-15707d079315"]
 
@@ -310,7 +314,7 @@ class BasePlugin:
         self.dtLastSend = datetime(2000, 1, 1)
 
 
-    def myDebug(self, message, bNoLog=False):
+    def myMessage(self, message, bNoLog=False):
         if (not bNoLog) and (self.iDebugLevel > 1):
             Domoticz.Log(message)
         if self.fDebug:
@@ -322,17 +326,21 @@ class BasePlugin:
 
     def myLog(self, message):
         Domoticz.Log(message)
-        self.myDebug(message, True)
+        self.myMessage(message, True)
+
+
+    def myDebug(self, message, bNoLog=False):
+        self.myMessage("Debug : " + message)
 
 
     def myStatus(self, message):
         Domoticz.Status(message)
-        self.myDebug("Status : " + message, True)
+        self.myMessage("Status : " + message, True)
 
 
     def myError(self, message):
         Domoticz.Error(message)
-        self.myDebug("Erreur : " + message, True)
+        self.myMessage("Erreur : " + message, True)
 
 
     # resend same data
@@ -420,7 +428,7 @@ class BasePlugin:
         self.connectAndSendForAuthorize(sendData)
 
 
-    def showStatusError(self, hours, Data, bDebug=False):
+    def showStatusError(self, hours, Data, bWarningOnly=False, bDebug=False):
         sErrorSentence = "Erreur"
         iStatus = getStatus(Data)
         if iStatus != 504:
@@ -432,10 +440,10 @@ class BasePlugin:
             sErrorSentence = sErrorSentence + " - description : " + sErrorDescription
         if sErrorUri:
             sErrorSentence = sErrorSentence + " - URI : " + sErrorUri
-        self.showStepError(hours, sErrorSentence, bDebug)
+        self.showStepError(hours, sErrorSentence, bWarningOnly, bDebug)
 
 
-    def showSimpleStatusError(self, Data):
+    def showSimpleStatusError(self, Data, bWarningOnly=False, bDebug=False):
         sErrorSentence = "Erreur"
         iStatus = getStatus(Data)
         if iStatus != 504:
@@ -447,7 +455,7 @@ class BasePlugin:
             sErrorSentence = sErrorSentence + " - description : " + sErrorDescription
         if sErrorUri:
             sErrorSentence = sErrorSentence + " - URI : " + sErrorUri
-        self.showSimpleStepError(sErrorSentence)
+        self.showSimpleStepError(sErrorSentence, bWarningOnly, bDebug)
 
 
     def parseDeviceCode(self, Data):
@@ -515,7 +523,7 @@ class BasePlugin:
         postData = {
             "grant_type": "refresh_token",
             "client_id": CLIENT_ID[self.iAlternateAddress],
-            "refresh_token": getConfigItem("refresh_token", "")
+            "refresh_token": self.getConfigItem("refresh_token", "")
         }
 
         sendData = {
@@ -561,16 +569,16 @@ class BasePlugin:
                     self.showSimpleStepError("Les données reçues ne sont pas du JSON : " + str(err))
                     return "retry"
                 if dJson and ("usage_points_id" in dJson):
-                    setConfigItem("usage_points_id", str(dJson["usage_points_id"]).split(","))
+                    self.setConfigItem("usage_points_id", str(dJson["usage_points_id"]).split(","))
                 count = 0
                 if dJson and ("refresh_token" in dJson):
-                    setConfigItem("refresh_token", dJson["refresh_token"])
+                    self.setConfigItem("refresh_token", dJson["refresh_token"])
                     count = count + 1
                 if dJson and ("access_token" in dJson):
-                    setConfigItem("access_token", dJson["access_token"])
+                    self.setConfigItem("access_token", dJson["access_token"])
                     count = count + 1
                 if dJson and ("token_type" in dJson):
-                    setConfigItem("token_type", dJson["token_type"])
+                    self.setConfigItem("token_type", dJson["token_type"])
                     count = count + 1
                 if count == 3:
                     return "done"
@@ -586,7 +594,7 @@ class BasePlugin:
     # Get data
     def getData(self, uri, dtStart, dtEnd):
         headers = self.initHeaders(API_BASE_URI[self.iAlternateAddress] + ":" + API_BASE_PORT[self.iAlternateAddress])
-        headers["Authorization"] = getConfigItem("token_type", "") + " " + getConfigItem("access_token", "")
+        headers["Authorization"] = self.getConfigItem("token_type", "") + " " + self.getConfigItem("access_token", "")
 
         query = {
             "start": datetimeToEnedisDateString(dtStart),
@@ -664,16 +672,18 @@ class BasePlugin:
 
 
     # Show error in state machine context
-    def showSimpleStepError(self, logMessage, bDebug=False):
+    def showSimpleStepError(self, logMessage, bWarningOnly=False, bDebug=False):
         sMessage = "durant l'étape : " + self.sConnectionStep + " - " + logMessage
         if bDebug:
             self.myDebug(sMessage)
+        elif bWarningOnly:
+            self.myStatus(sMessage)
         else:
             self.myError(sMessage)
 
 
     # Show error in state machine context with dates
-    def showStepError(self, hours, logMessage, bDebug=False):
+    def showStepError(self, hours, logMessage, bWarningOnly=False, bDebug=False):
         if hours:
             sMessage = "durant l'étape " + self.sConnectionStep + " de " + datetimeToEnedisDateString(
                 self.dateBeginHours) + " à " + datetimeToEnedisDateString(self.dateEndHours) + " - " + logMessage
@@ -682,6 +692,8 @@ class BasePlugin:
                 self.dateBeginDays) + " à " + datetimeToEnedisDateString(self.dateEndDays) + " - " + logMessage
         if bDebug:
             self.myDebug(sMessage)
+        elif bWarningOnly:
+            self.myStatus(sMessage)
         else:
             self.myError(sMessage)
 
@@ -925,8 +937,8 @@ class BasePlugin:
                                     return False
                         # Here we can shift data for other views, choosing another hour as new date reference
                     if iHour == 0:
-                        # Check we have enough data
-                        if iHourCount >= 24:
+                        # Check we have enough data, at least half a day
+                        if iHourCount >= 12:
                             # Here we can shift day accordingly to iHour, to use date from beginning of data
                             sShortDate = datetimeToSQLDateString(dDate2 - timedelta(hours=iHourCount))
                             if not self.addToDevice(oDevice, iDConsumption1, iDConsumption2, iDProduction1, iDProduction2, sShortDate):
@@ -1352,7 +1364,7 @@ class BasePlugin:
             fProdVal2 =0
 
         if (fConsoVal1 < 0) or (fConsoVal2 < 0) or (fProdVal1 < 0) or (fProdVal2 < 0) or (fSecVal1 < 0) or (fSecVal2 < 0):
-            self.showStepError(False, "Données manquantes pour mettre à jour le tableau de bord")
+            self.showStepError(False, "Données manquantes pour mettre à jour le tableau de bord", True)
             return False
         else:
             dtTimeout = setTimeout()
@@ -1391,6 +1403,7 @@ class BasePlugin:
         self.iDaysLeft = self.iDaysLeft - 1095
         if self.iDaysLeft <= 0:
             daysToGet = self.iDaysLeft + 1095
+            self.iDaysLeft = 0
         else:
             daysToGet = 1095
         self.dateBeginDays = self.savedDateEndDays - timedelta(days=daysToGet)
@@ -1403,6 +1416,7 @@ class BasePlugin:
         self.iDaysLeftHoursView = self.iDaysLeftHoursView - 7
         if self.iDaysLeftHoursView <= 0:
             daysToGet = self.iDaysLeftHoursView + 7
+            self.iDaysLeftHoursView = 0
         else:
             daysToGet = 7
         self.dateBeginHours = self.savedDateEndDaysForHoursView - timedelta(days=daysToGet)
@@ -1430,8 +1444,8 @@ class BasePlugin:
             bGrabAll = True
         else:
             dtNow = datetime.now()
-            dtLastConnection = datetime.fromtimestamp(getConfigItem("previous_successful_connection_date", datetime(2000, 1, 1)))
-            dtGrab = datetime.fromtimestamp(getConfigItem("next_history_grab_date", datetime(2000, 1, 1)))
+            dtLastConnection = datetime.fromtimestamp(self.getConfigItem("previous_successful_connection_date", datetime(2000, 1, 1)))
+            dtGrab = datetime.fromtimestamp(self.getConfigItem("next_history_grab_date", datetime(2000, 1, 1)))
             if (dtGrab <= dtNow) or ((dtLastConnection + timedelta(days = self.iSavedHistoryDaysForDaysView)) <= dtNow):
                 bGrabAll = True
         if bGrabAll and (self.iSavedHistoryDaysForDaysView > iNbDaysLongHistory):
@@ -1449,17 +1463,17 @@ class BasePlugin:
         iNbDaysLongHistory = NB_WEEKS_LONG_HISTORY * 7
         dtNow = datetime.now()
         if not bError:
-            setConfigItem("previous_successful_connection_date", dtNow)
+            self.setConfigItem("previous_successful_connection_date", dtNow)
             self.dtDataInMemory = dtNow
             if self.bHistoryDaysForDaysViewGrabAll:
                 dtGrab = dtNow + timedelta(days = self.iSavedHistoryDaysForDaysView / 2)
-                setConfigItem("next_history_grab_date", dtGrab)
+                self.setConfigItem("next_history_grab_date", dtGrab)
         elif self.bHistoryDaysForDaysViewGrabAll:
             iDaysRand = (round(dtNow.microsecond / 10000) % 7) + 1
             dtGrab = dtNow + timedelta(days = iDaysRand)
-            setConfigItem("next_history_grab_date", dtGrab)
+            self.setConfigItem("next_history_grab_date", dtGrab)
         if self.iSavedHistoryDaysForDaysView > iNbDaysLongHistory:
-            dtGrab = datetime.fromtimestamp(getConfigItem("next_history_grab_date", datetime(2000, 1, 1)))
+            dtGrab = datetime.fromtimestamp(self.getConfigItem("next_history_grab_date", datetime(2000, 1, 1)))
             self.myStatus("Prochaine récupération complète de l'historique : " + datetimeToSQLDateString(dtGrab))
 
 
@@ -1477,7 +1491,7 @@ class BasePlugin:
             iMinutesRand = round(dtNow.microsecond / 10000) % 60
             self.dateNextConnection = self.dateNextConnection + timedelta(minutes=iMinutesRand)
             if bForceTomorrow:
-                self.myError("Serveurs inaccessibles à cette heure, prochaine connexion : " + datetimeToSQLDateTimeString(self.dateNextConnection))
+                self.myStatus("Serveurs inaccessibles à cette heure, prochaine connexion : " + datetimeToSQLDateTimeString(self.dateNextConnection))
             # For test purpose
             #self.dateNextConnection = dtNow + timedelta(minutes=1)
         # Randomize minutes to lower load on Enedis website
@@ -1503,7 +1517,7 @@ class BasePlugin:
             minutesRand = round(dtNow.microsecond / 10000) % 60
             self.dateNextConnection = self.dateNextConnection + timedelta(minutes=minutesRand)
             self.sConnectionStep = "idle"
-            self.myError("Serveurs inaccessibles à cette heure, prochaine connexion : " + datetimeToSQLDateTimeString(self.dateNextConnection))
+            self.myStatus("Serveurs inaccessibles à cette heure, prochaine connexion : " + datetimeToSQLDateTimeString(self.dateNextConnection))
         return bTomorrow
 
 
@@ -1522,7 +1536,7 @@ class BasePlugin:
 
     def disablePlugin(self):
         self.isEnabled = False
-        resetTokens()
+        self.resetTokens()
         for oDevice in Devices.values():
             oDevice.Update(nValue=oDevice.nValue, sValue=oDevice.sValue, TimedOut=1)
         self.showSimpleStepError(
@@ -1530,7 +1544,7 @@ class BasePlugin:
 
     # return True if data already in memory or ask data and True if data in cache empty
     def getDataHours(self, sUsagePointCurrentId, bProdMode, dtStart, dtEnd):
-        self.myDebug("getDataHours for " + datetimeToSQLDateString(dtStart) + " to " + datetimeToSQLDateString(dtEnd))
+        self.myDebug("getDataHours de " + datetimeToSQLDateString(dtStart) + " à " + datetimeToSQLDateString(dtEnd))
 
         # check if we already have data in memory
         try:
@@ -1542,10 +1556,11 @@ class BasePlugin:
             dtStartPrev = dtStart
             dtEndPrev = dtEnd
             if ("isempty" in pState) and pState["isempty"]:
-                self.myDebug("Cache indicates no " + sType  + " data")
+                self.myDebug("Le cache indique aucune de données de " + sType)
                 return True, True
             dtStartMem = pState["begindate"]
             dtEndMem = pState["enddate"] + timedelta(hours=1)
+            dtStart = dtStart + timedelta(hours=1)
             #self.myDebug("Dates 1 " + str(dtStart)  + " " + str(dtEnd)  + " " + str(dtStartMem)  + " " + str(dtEndMem))
             #self.myDebug("Compare to " + datetimeToSQLDateString(dtStartMem) + " to " + datetimeToSQLDateString(dtEndMem))
             if dtStart >= dtStartMem:
@@ -1554,19 +1569,23 @@ class BasePlugin:
                 dtEnd = dtStartMem
             #self.myDebug("Dates 2 " + str(dtStart)  + " " + str(dtEnd)  + " " + str(dtStartMem)  + " " + str(dtEndMem))
             if dtStart >= dtEnd:
-                self.myDebug("Using " + sType  + " data in cache from " + datetimeToSQLDateString(dtStartPrev) + " to " + datetimeToSQLDateString(dtEndPrev))
+                self.myDebug("Utilise les données de " + sType  + " du cache de " + datetimeToSQLDateString(dtStartPrev) + " à " + datetimeToSQLDateString(dtEndPrev))
                 return True, False
-            elif (dtStart != dtStartPrev) or (dtEnd != dtEndPrev):
-                self.myDebug("Using data partially in cache, asking data from " + datetimeToSQLDateString(dtStart) + " to " + datetimeToSQLDateString(dtEnd) + " only")
+            if (dtStart != dtStartPrev) or (dtEnd != dtEndPrev):                
+                self.myDebug("Utilise partiellement des données du cache, demande des données de " + datetimeToSQLDateString(dtStart) + " à " + datetimeToSQLDateString(dtEnd) + " seulement")
         except:
             pass
+        dtStart = dtStart.replace(hour=0, minute=0, second=0, microsecond=0)
+        dtEnd = dtStart.replace(hour=0, minute=0, second=0, microsecond=0)
+        if dtStart == dtEnd:
+            dtEnd = dtStart + timedelta(days=1)
         self.getData(API_ENDPOINT_DATA_PRODUCTION_LOAD_CURVE if bProdMode else API_ENDPOINT_DATA_CONSUMPTION_LOAD_CURVE, dtStart, dtEnd)
         return False, False
 
 
     # return True if data already in memory or ask data and True if data in cache empty
     def getDataPeaks(self, sUsagePointCurrentId, bProdMode, dtStart, dtEnd):
-        self.myDebug("getDataPeaks for " + datetimeToSQLDateString(dtStart) + " to " + datetimeToSQLDateString(dtEnd))
+        self.myDebug("getDataPeaks de " + datetimeToSQLDateString(dtStart) + " à " + datetimeToSQLDateString(dtEnd))
         
         # check if we already have data in memory
         try:
@@ -1588,10 +1607,10 @@ class BasePlugin:
             if dtEnd <= dtEndMem:
                 dtEnd = dtStartMem
             if dtStart >= dtEnd:
-                self.myDebug("Using " + sType  + " data in cache from " + datetimeToSQLDateString(dtStartPrev) + " to " + datetimeToSQLDateString(dtEndPrev))
+                self.myDebug("Utilise les données de " + sType  + " du cache de " + datetimeToSQLDateString(dtStartPrev) + " à " + datetimeToSQLDateString(dtEndPrev))
                 return True, False
             elif (dtStart != dtStartPrev) or (dtEnd != dtEndPrev):
-                self.myDebug("Using data partially in cache, asking data from " + datetimeToSQLDateString(dtStart) + " to " + datetimeToSQLDateString(dtEnd) + " only")
+                self.myDebug("Utilise partiellement des données du cache, demande des données de " + datetimeToSQLDateString(dtStart) + " à " + datetimeToSQLDateString(dtEnd) + " seulement")
         except:
             pass
         self.getData(API_ENDPOINT_DATA_CONSUMPTION_MAX_POWER, dtStart, dtEnd)
@@ -1610,7 +1629,7 @@ class BasePlugin:
             self.clearState()
 
             # If we have access tokens, try do grab data, otherwise ask for tokens
-            if getConfigItem("access_token", ""):
+            if self.getConfigItem("access_token", ""):
                 self.sConnectionStep = "start"
             else:
                 self.sConnectionStep = "parsedevicecode"
@@ -1644,7 +1663,7 @@ class BasePlugin:
         elif self.sConnectionStep == "askagainaccesscode":
             # We must stay connected until completion, otherwise = error
             if not self.httpLoginConn.Connected():
-                self.showSimpleStepError("Redemande du jeton d'accès")
+                self.showSimpleStepError("Redemande du jeton d'accès", True)
                 self.sConnectionStep = "done"
                 self.bHasAFail = True
             else:
@@ -1654,7 +1673,7 @@ class BasePlugin:
         # Retry
         elif self.sConnectionStep == "retry":
             if (self.iResendCount >= 3):
-                self.showSimpleStepError("Trop d'échecs de communication, le plugin réessaiera plus tard")
+                self.showSimpleStepError("Trop d'échecs de communication, le plugin réessaiera plus tard", True)
                 self.sConnectionStep = "done"
                 self.bHasAFail = True
             else:
@@ -1694,7 +1713,7 @@ class BasePlugin:
                 self.showSimpleStatusError(Data)
                 self.disablePlugin()
             elif bNoDataInCache or (iStatus == 404) or (self.bProdMode and (iStatus == 400)):
-                #self.showStatusError(True, Data, True)
+                #self.showStatusError(True, Data, False, True)
                 if self.bFirstBatch:
                     if (self.bProdMode):
                         self.bNoProduction = True
@@ -1702,8 +1721,12 @@ class BasePlugin:
                         self.bNoConsumption = True
                     if self.bNoConsumption and self.bNoProduction:
                         #self.showStatusError(True, Data)
-                        self.showStepError(True, "Pas de données disponibles, avez-vous associé un compteur à votre compte et demandé l'enregistrement et la collecte des données horaire sur le site d'Enedis (dans \"Gérer l'accès à mes données\") ?")
+                        self.showStepError(True, "Pas de données disponibles, ni en consommation, ni en production, avez-vous associé un compteur à votre compte et demandé l'enregistrement et la collecte des données horaire sur le site d'Enedis (dans \"Gérer l'accès à mes données\") ?", True)
                         self.bHasAFail = True
+                    elif self.bNoConsumption:
+                        self.showStepError(True, "Pas de données disponibles en consommation, récupération des données de production", True, True)
+                    elif self.bNoProduction:
+                        self.showStepError(True, "Pas de données disponibles en production", True, True)
                 self.sConnectionStep = "prod"
             # If status 429 or 500, retry later
             elif (iStatus == 429) or (iStatus == 500):
@@ -1758,7 +1781,7 @@ class BasePlugin:
                 self.disablePlugin()
             # No peak available, it happens, ignore error silently
             elif bNoDataInCache or iStatus == 404:
-                self.showStatusError(False, Data, True)
+                self.showStatusError(False, Data, False, True)
                 self.sConnectionStep = "prod"
             # If status 429 or 500, retry later
             elif (iStatus == 429) or (iStatus == 500):
@@ -1783,7 +1806,7 @@ class BasePlugin:
 
         # first step to grab data
         if self.sConnectionStep == "start":
-            self.lUsagePointIndex = getConfigItem("usage_points_id", [])
+            self.lUsagePointIndex = self.getConfigItem("usage_points_id", [])
             if (len(self.lUsagePointIndex) > 0):
                 dtNow = datetime.now()
                 self.resetDates(datetime(dtNow.year, dtNow.month, dtNow.day))
@@ -1846,6 +1869,7 @@ class BasePlugin:
                 self.bGlobalHasAFail = True
             if self.bGlobalHasAFail:
                 self.setNextConnection(False)
+            self.saveCache()
             self.savePreviousSuccessfulConnectionDate(self.bGlobalHasAFail)
             self.clearState()
             self.sConnectionStep = "idle"
@@ -1855,7 +1879,7 @@ class BasePlugin:
     def dumpDictToLog(self, dictToLog):
         if self.iDebugLevel:
             if isinstance(dictToLog, dict):
-                self.myDebug("Dict details (" + str(len(dictToLog)) + "):")
+                self.myDebug("Détails du dict (" + str(len(dictToLog)) + "):")
                 for x in dictToLog:
                     if isinstance(dictToLog[x], dict):
                         self.myDebug("--->'" + str(x) + " (" + str(len(dictToLog[x])) + "):")
@@ -1868,7 +1892,7 @@ class BasePlugin:
                     else:
                         self.myDebug("--->'" + str(x) + "':'" + str(dictToLog[x]) + "'")
             else:
-                self.myDebug("Received no dict: " + str(dictToLog))
+                self.myDebug("Pas de dict reçu : " + str(dictToLog))
 
 
     def onStart(self):
@@ -1884,7 +1908,10 @@ class BasePlugin:
             Domoticz.Debugging(1)
 
         if self.iDebugLevel == 3:
-            resetTokens()
+            self.resetTokens()
+
+        if self.iDebugLevel == 4:
+            self.resetCache()            
 
         if self.iDebugLevel >= 10:
             self.iAlternateAddress = 1
@@ -1989,7 +2016,7 @@ class BasePlugin:
         self.myLog("Debug mis à " + str(self.iDebugLevel))
         if self.fDebug:
             self.myStatus("Log dans le fichier " + self.fDebug.name + " pour le matériel " + str(Parameters["Name"]) + " avec la version " + str(Parameters["Version"]) + " du plugin")
-            self.myDebug("Domoticz version " + str(Parameters["DomoticzVersion"]) + " " + str(Parameters["DomoticzHash"]) + " " + str(Parameters["DomoticzBuildTime"]), True)                        
+            self.myDebug("Domoticz version " + str(Parameters["DomoticzVersion"]) + " " + str(Parameters["DomoticzHash"]) + " " + str(Parameters["DomoticzBuildTime"]))                        
 
         # Parameter for tarif 1/2
         self.parseHcParameter(self.sTarif)
@@ -1997,14 +2024,17 @@ class BasePlugin:
         # most init
         self.__init__()
         self.clearData()
+        self.loadCache()
+        # TODO pour le debug, à supprimer
+        #self.setConfigItem("next_history_grab_date", datetime(2000, 1, 1))
 
         self.myLog(
             "Si vous ne voyez pas assez de données dans la vue par heures, augmentez le paramètre Log des capteurs qui se trouve dans Réglages / Paramètres / Historique des logs")
 
-        iPreviousHistoryDaysForDaysView = getConfigItem("history_days", 0)
+        iPreviousHistoryDaysForDaysView = self.getConfigItem("history_days", 0)
         if self.iHistoryDaysForDaysView != iPreviousHistoryDaysForDaysView:
             self.bHistoryDaysForDaysViewChanged = True
-            setConfigItem("history_days", self.iHistoryDaysForDaysView)
+            self.setConfigItem("history_days", self.iHistoryDaysForDaysView)
         else:
             self.bHistoryDaysForDaysViewChanged = False
         self.iSavedHistoryDaysForDaysView = self.iHistoryDaysForDaysView
@@ -2091,6 +2121,98 @@ class BasePlugin:
             elif (self.sConnectionStep == "connecting") or (self.sConnectionStep == "sending"):
                 self.handleConnection()
 
+    # Get config item from Domoticz DB, convert DateTime to timestamp to circumvent a Domoticz bug
+    def getConfigItem(self, Key=None, Default={}):
+        Value = Default
+        try:
+            Config = Domoticz.Configuration()
+            if (Key != None):
+                Value = Config[Key]  # only return requested key if there was one
+            else:
+                Value = Config  # return the whole configuration if no key
+        except KeyError:
+            try:
+                Value = Default.timestamp()
+            except:
+                Value = Default
+        except Exception as inst:
+            self.myError("Domoticz.Configuration read failed: '" + str(inst) + "'")
+        return Value
+
+
+    # Set config item from Domoticz DB, convert DateTime to timestamp to circumvent a Domoticz bug
+    def setConfigItem(self, Key=None, Value=None):
+        Config = {}
+        try:
+            Config = Domoticz.Configuration()
+            try:
+                Value = Value.timestamp()
+            except:
+                pass
+            if (Key != None):
+                Config[Key] = Value
+            else:
+                Config = Value  # set whole configuration if no key specified
+            Config = Domoticz.Configuration(Config)
+        except Exception as inst:
+            self.myError("Domoticz.Configuration operation failed: '" + str(inst) + "'")
+        return Config
+
+
+    # Erase authorization tokens
+    def resetTokens(self):
+        self.setConfigItem("usage_points_id", [])
+        self.setConfigItem("token_type", "")
+        self.setConfigItem("refresh_token", "")
+        self.setConfigItem("access_token", "")
+
+
+    # Erase cache on disk
+    def resetCache(self):
+        self.dData = dict()
+        self.setConfigItem("cache", "")
+        self.setConfigItem("cache_checksum", "")
+        
+
+    # save cache to disk
+    def saveCache(self):
+        # clean cache
+        lKeyToDelete = []
+        for sKey in self.dData:
+            if not sKey in self.lUsagePointIndex:
+                lKeyToDelete.append(sKey)
+        for sKey in lKeyToDelete:
+            self.dData.pop(sKey)
+        # serialize and save
+        #self.dumpDictToLog(self.dData)
+        bSerializedData = pickle.dumps(self.dData)
+        sSerializedData = codecs.encode(bSerializedData, "base64").decode()
+        checksum = hashlib.blake2s(bSerializedData).hexdigest()
+        self.setConfigItem("cache", sSerializedData)
+        self.setConfigItem("cache_checksum", checksum)
+
+
+    # load cache from disk
+    def loadCache(self):
+        sSerializedData = self.getConfigItem("cache", None)
+        checksum1 = self.getConfigItem("cache_checksum", None)
+        if sSerializedData and checksum1:
+            bSerializedData = codecs.decode(sSerializedData.encode(), "base64")
+            checksum2 = hashlib.blake2s(bSerializedData).hexdigest()
+            if checksum1 != checksum2:
+                #self.myError("Cache incohérent, remise à 0 du cache (checksum calculé à " + checksum2 + " et checksum sur le disque à " + checksum1 + ")")
+                self.myError("Cache incohérent, remise à 0 du cache")
+                self.resetCache()
+                return False
+            else:
+                self.dData = pickle.loads(bSerializedData)
+                self.myLog("Cache chargé depuis le disque")
+                self.dumpDictToLog(self.dData)
+                return True
+        else:
+            self.myLog("Pas de cache trouvé sur le disque")
+            return False
+
 
 global _plugin
 _plugin = BasePlugin()
@@ -2162,57 +2284,19 @@ def setRefreshTime(dtDate=None):
     return dtDate + timedelta(seconds=50)
 
 
-# Get config item from Domoticz DB, convert DateTime to timestamp to circumvent a Domoticz bug
-def getConfigItem(Key=None, Default={}):
-    Value = Default
-    try:
-        Config = Domoticz.Configuration()
-        if (Key != None):
-            Value = Config[Key]  # only return requested key if there was one
-        else:
-            Value = Config  # return the whole configuration if no key
-    except KeyError:
-        try:
-            Value = Default.timestamp()
-        except:
-            Value = Default
-    except Exception as inst:
-        self.myError("Domoticz.Configuration read failed: '" + str(inst) + "'")
-    return Value
-
-
-# Set config item from Domoticz DB, convert DateTime to timestamp to circumvent a Domoticz bug
-def setConfigItem(Key=None, Value=None):
-    Config = {}
-    try:
-        Config = Domoticz.Configuration()
-        try:
-            Value = Value.timestamp()
-        except:
-            pass
-        if (Key != None):
-            Config[Key] = Value
-        else:
-            Config = Value  # set whole configuration if no key specified
-        Config = Domoticz.Configuration(Config)
-    except Exception as inst:
-        self.myError("Domoticz.Configuration operation failed: '" + str(inst) + "'")
-    return Config
-
-
-# Erase authorization tokens
-def resetTokens():
-    setConfigItem("usage_points_id", [])
-    setConfigItem("token_type", "")
-    setConfigItem("refresh_token", "")
-    setConfigItem("access_token", "")
-
 def initInnerState():
     return {"begindate": datetime(2300, 1, 1), "enddate": datetime(2000, 1, 1)}
 
 
 def initState():
     return {"consumption": initInnerState(), "production": initInnerState(), "consumptionpeak": initInnerState(), "productionpeak": initInnerState()}
+
+
+def initData():
+    return {"consumption1_hours": {}, "consumption2_hours": {}, "production1_hours": {}, "production2_hours": {}, "consumptionpeak": 0, "productionpeak": 0, "hasconsoprod": False, "haspeak": False, "consoproddate": datetime(2000, 1, 1), "peakdate": datetime(2000, 1, 1)}
+
+def initInnerState():
+    return {"begindate": datetime(2300, 1, 1), "enddate": datetime(2000, 1, 1)}
 
 
 def initData():
